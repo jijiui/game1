@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>猜字小游戏 Demo</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <h1>猜字小游戏 Demo</h1>
+    </header>
+
+    <main class="container">
+      <section class="left">
+        <div class="controls">
+          <form id="charGuessForm" autocomplete="off">
+            <label for="charInput">猜一个字符：</label>
+            <input type="text" id="charInput" name="charInput" placeholder="汉字/字母/数字" enterkeyhint="send" />
+            <label for="modeSelect">模式：</label>
+            <select id="modeSelect" title="选择模式">
+              <option value="single">单人模式</option>
+              <option value="multi">双人模式</option>
+            </select>
+            <select id="playerSelect" title="选择玩家">
+              <option value="1">我是：玩家1</option>
+              <option value="2">我是：玩家2</option>
+            </select>
+            <button type="submit">猜</button>
+            <button type="button" id="resetBtn" title="重置进度">重置</button>
+          </form>
+          <div id="charStatus" class="status"></div>
+          <div id="attemptsStatus" class="status"></div>
+          <div id="connectionStatus" class="status"></div>
+        </div>
+
+        <div class="article">
+          <div class="section-label">标题</div>
+          <pre id="titleView" class="masked"></pre>
+          <div class="section-label">正文</div>
+          <pre id="bodyView" class="masked"></pre>
+        </div>
+      </section>
+
+      <aside class="right">
+        <h2>玩家猜过</h2>
+        <div id="playersGuessesBlock" class="players-guesses">
+          <div class="player-row">
+            <span class="player-label">玩家1猜过：</span>
+            <div id="p1Guesses" class="guess-list" aria-live="polite"></div>
+          </div>
+          <div class="player-row">
+            <span class="player-label">玩家2猜过：</span>
+            <div id="p2Guesses" class="guess-list" aria-live="polite"></div>
+          </div>
+        </div>
+        
+        <details>
+          <summary>玩法说明</summary>
+          <ul>
+            <li>两人协作：选择“我是玩家1/2”，各自输入字符。</li>
+            <li>命中的字符会在全文显示，且在“玩家猜过”里以绿色标记。</li>
+            <li>重复输入任何已猜过的字符，会提示“已经猜过了”。</li>
+            <li>当标题的每个字符都被揭示，自动显示全文。</li>
+          </ul>
+        </details>
+      </aside>
+    </main>
+
+    <script src="main.js"></script>
+  </body>
+  </html>
