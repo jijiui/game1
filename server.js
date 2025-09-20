@@ -191,7 +191,7 @@ const server = http.createServer((req, res) => {
     req.on('end', async () => {
       try {
         const apiKey = process.env.ZHIPUAI_API_KEY || (JSON.parse(body || '{}').apiKey);
-        const result = await generateArticleWithZhipu(apiKey);
+        const result = await generateArticleWithZhipuTest(apiKey);
         if (result) {
           ARTICLE = result;
           rebuildFromArticle();
@@ -227,7 +227,7 @@ server.listen(PORT, async () => {
   console.log(`Server listening on http://localhost:${PORT}`);
   if (process.env.ZHIPUAI_API_KEY) {
     try {
-      const gen = await generateArticleWithZhipu(process.env.ZHIPUAI_API_KEY);
+      const gen = await generateArticleWithZhipuTest(process.env.ZHIPUAI_API_KEY);
       if (gen) {
         ARTICLE = gen;
         rebuildFromArticle();
@@ -293,4 +293,44 @@ function httpsJson(urlStr, jsonBody, apiKey) {
       req.end();
     } catch (e) { reject(e); }
   });
+}
+
+// Use test script prompts for generation (banned titles filtered, up to 3 tries)
+async function generateArticleWithZhipuTest(apiKey) {
+  if (!apiKey) return null;
+  const banned = new Set(['图书馆', '咖啡', '蓝牙']);
+  for (let i = 0; i < 3; i++) {
+    const payload = {
+      model: 'glm-4.5-flash',
+      messages: [
+        {
+          role: 'system',
+          content:
+            '你是一个文字助手，先给出一个不生僻名词，可以是人物地点作品物品品牌等等的任意东西的名字，也可以是一个概念，然后给出关于这个词的介绍。注意，出过的词不要再出。输出 JSON：{"title":"...","body":"..."}，不要额外说明，不要代码块。正文通俗、原创、无敏感内容。出过的词不要再出。',
+        },
+        {
+          role: 'user',
+          content:
+            '给出一个不生僻名词，出过的词不要再出，人物地点作品物品品牌等等的任意东西的名字，也可以是一个概念，涉及历史文艺生物日常生活，以及300~400字的关于这个词的介绍,介绍要至少分2段，最多分4段，要求上面的 JSON 格式。',
+        },
+      ],
+      temperature: 0.7,
+    };
+    const resp = await httpsJson('https://open.bigmodel.cn/api/paas/v4/chat/completions', payload, apiKey);
+    if (!resp) continue;
+    const text = resp?.choices?.[0]?.message?.content || '';
+    try {
+      const start = text.indexOf('{');
+      const end = text.lastIndexOf('}');
+      const raw = start >= 0 ? text.slice(start, end + 1) : text;
+      const obj = JSON.parse(raw);
+      if (obj && typeof obj.title === 'string' && typeof obj.body === 'string') {
+        const title = String(obj.title).trim();
+        const body = String(obj.body).trim();
+        if (banned.has(title)) continue;
+        return { title, body };
+      }
+    } catch {}
+  }
+  return null;
 }
