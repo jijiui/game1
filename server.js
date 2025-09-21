@@ -193,7 +193,13 @@ const server = http.createServer((req, res) => {
         const apiKey = process.env.ZHIPUAI_API_KEY || (JSON.parse(body || '{}').apiKey);
         const result = await generateArticleWithZhipuTest(apiKey);
         if (result) {
-          ARTICLE = result;
+          let finalArticle = { title: result.title, body: result.body };
+          // 校对纠错
+          const checked = await checkAndFixArticleWithZhipu(apiKey, finalArticle);
+          if (checked && checked.title && checked.body) {
+            finalArticle = checked;
+          }
+          ARTICLE = finalArticle;
           rebuildFromArticle();
           broadcast();
           res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -229,7 +235,12 @@ server.listen(PORT, async () => {
     try {
       const gen = await generateArticleWithZhipuTest(process.env.ZHIPUAI_API_KEY);
       if (gen) {
-        ARTICLE = gen;
+        let finalArticle = { title: gen.title, body: gen.body };
+        const checked = await checkAndFixArticleWithZhipu(process.env.ZHIPUAI_API_KEY, finalArticle);
+        if (checked && checked.title && checked.body) {
+          finalArticle = checked;
+        }
+        ARTICLE = finalArticle;
         rebuildFromArticle();
         console.log('Article loaded from Zhipu BigModel (startup).');
       }
@@ -293,6 +304,41 @@ function httpsJson(urlStr, jsonBody, apiKey) {
       req.end();
     } catch (e) { reject(e); }
   });
+}
+
+// 校对纠错：只返回 JSON {title, body}
+async function checkAndFixArticleWithZhipu(apiKey, article) {
+  if (!apiKey) return null;
+  const payload = {
+    model: 'glm-4.5-flash',
+    messages: [
+      {
+        role: 'system',
+        content:
+          '你是中文文本校对助手。接收 JSON：{"title":"...","body":"..."}，仅返回修正后的 JSON（同样字段），不要多余文字或代码块。修正错别字、标点、语法，意图不变。',
+      },
+      {
+        role: 'user',
+        content:
+          '请校对并仅返回 JSON：' +
+          JSON.stringify({ title: String(article.title || ''), body: String(article.body || '') }),
+      },
+    ],
+    temperature: 0.2,
+  };
+  const resp = await httpsJson('https://open.bigmodel.cn/api/paas/v4/chat/completions', payload, apiKey);
+  if (!resp) return null;
+  const text = resp?.choices?.[0]?.message?.content || '';
+  try {
+    const start = text.indexOf('{');
+    const end = text.lastIndexOf('}');
+    const raw = start >= 0 ? text.slice(start, end + 1) : text;
+    const obj = JSON.parse(raw);
+    if (obj && typeof obj.title === 'string' && typeof obj.body === 'string') {
+      return { title: String(obj.title).trim(), body: String(obj.body).trim() };
+    }
+  } catch {}
+  return null;
 }
 
 // Use test script prompts for generation (banned titles filtered, up to 3 tries)

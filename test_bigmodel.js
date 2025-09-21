@@ -73,15 +73,15 @@ async function generateArticle(apiKey, maxTries = 3) {
         {
           role: 'system',
           content:
-            '你是一个文字助手，先给出一个不生僻名词，可以是人物地点作品物品品牌等等的任意东西的名字，也可以是一个概念，然后给出关于这个词的介绍。注意，出过的词不要再出。输出 JSON：{"title":"...","body":"..."}，不要额外说明，不要代码块。正文通俗、原创、无敏感内容。出过的词不要再出。',
+            '你是一个文字助手，你会被要求给出一个不生僻名词，可以是人物地点作品物品品牌等等的任意东西的名字，也可以是一个概念，然后给出关于这个词的介绍。你在给出词之前会先查看自己之前给出过什么词然后避免给出之前给出过的词。你的输出永远是这样的格式 JSON：{"title":"...","body":"..."，thewordshavebeengive:""}，没有额外说明，没有代码块。你的正文通俗、原创、无敏感内容。',
         },
         {
           role: 'user',
           content:
-            '给出一个不生僻名词，出过的词不要再出，人物地点作品物品品牌等等的任意东西的名字，也可以是一个概念，涉及历史文艺生物日常生活，以及300~400字的关于这个词的介绍,介绍要至少分2段，最多分4段，要求上面的 JSON 格式。',
+            '给出一个不生僻名词，出过的词不要再出，人物地点作品物品品牌等等的任意东西的名字，也可以是一个概念，涉及历史文艺生物日常生活，以及300~400字的关于这个词的介绍,介绍要至少分2段，最多分4段。',
         },
       ],
-      temperature: 0.7,
+      temperature: 1,
     };
     const resp = await postJson(API_URL, payload, apiKey);
     const text = resp?.choices?.[0]?.message?.content || '';
@@ -105,11 +105,11 @@ async function checkAndFix(apiKey, article) {
       {
         role: 'system',
         content:
-          '你是中文文本校对助手。接收 JSON：{"title":"...","body":"..."}，仅返回修正后的 JSON（同样字段），不要多余文字或代码块。修正错别字、标点、语法，意图不变。',
+          '你是中文文本校对助手。接收 JSON：{"title":"...","body":"...",thewordshavebeengive:""}，仅返回修正后的 JSON（同样字段），不要多余文字或代码块。修正错别字、标点、语法，意图不变。',
       },
       {
         role: 'user',
-        content: '请校对并仅返回 JSON：' + JSON.stringify({ title: article.title, body: article.body }),
+        content: '请校对并仅返回 JSON：' + JSON.stringify({ title: article.title, body: article.body,words: article.thewordshavebeengive }),
       },
     ],
     temperature: 0.2,
