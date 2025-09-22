@@ -114,3 +114,18 @@ pre.masked {
 
 details { margin-top: 1rem; color: var(--muted); }
 summary { cursor: pointer; }
+
+/* 底部操作区 */
+.footer-actions {
+  margin-top: 0.25rem;
+  padding: 0.75rem 1.25rem 1rem;
+  border-top: 1px solid #e5e7eb;
+  background: #ffffff;
+  text-align: center;
+}
+.footer-actions .row-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
