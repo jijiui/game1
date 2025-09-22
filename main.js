@@ -36,6 +36,7 @@ let playerGuesses = { '1': [], '2': [] };
 let currentMode = 'single';
 let attemptsCount = 0;
 let serverArticleSeq = 0;
+let lastHitKey = null; // 最近一次命中的字符（归一化）
 
 function setStatusLoading(flag) {
   if (!el.charStatus) return;
@@ -61,7 +62,7 @@ function rebuildFromArticle() {
   revealedMask = new Array(fullChars.length).fill(false);
   for (let i = 0; i < fullChars.length; i++) if (PUNCTUATION_SET.has(fullChars[i])) revealedMask[i] = true;
   revealedSet.clear(); missedSet.clear(); guessedSet.clear();
-  preWinRevealed = null; gameWon = false;
+  preWinRevealed = null; gameWon = false; lastHitKey = null;
 }
 
 function renderAttempts() { if (el.attemptsStatus) el.attemptsStatus.textContent = `已猜测${attemptsCount}次`; }
@@ -77,7 +78,9 @@ function render() {
     } else if (revealedMask[i]) {
       span.textContent = ch;
       span.className = 'char';
-      if (gameWon && preWinRevealed && preWinRevealed[i] && !PUNCTUATION_SET.has(ch)) span.classList.add('pre-hit');
+      const isLetterOrChar = !PUNCTUATION_SET.has(ch);
+      if (gameWon && preWinRevealed && preWinRevealed[i] && isLetterOrChar) span.classList.add('pre-hit');
+      if (lastHitKey && isLetterOrChar && canonicalChar(ch) === lastHitKey) span.classList.add('last-hit');
     } else {
       span.textContent = ' ';
       span.className = 'char hidden-char';
@@ -129,6 +132,7 @@ function handleCharGuess(input) {
   if (!exists) { el.charStatus.textContent = `未命中：${c}`; el.charStatus.classList.add('err'); attemptsCount++; renderAttempts(); render(); return 'miss'; }
   if (!newly) { el.charStatus.textContent = '已经猜过了（命中）'; attemptsCount++; renderAttempts(); render(); return 'repeat'; }
 
+  lastHitKey = key;
   el.charStatus.textContent = `命中：${c}`; el.charStatus.classList.add('ok'); attemptsCount++; renderAttempts();
 
   if (!gameWon && titleCharIndexes.every((i) => revealedMask[i])) { preWinRevealed = revealedMask.slice(); gameWon = true; for (let i = 0; i < revealedMask.length; i++) revealedMask[i] = true; el.charStatus.textContent = '恭喜，标题已全部猜出，全文已揭示。'; el.charStatus.classList.add('ok'); }
@@ -145,9 +149,24 @@ function resetGame() {
 // 多人通讯
 function getPlayerId() { const saved = localStorage.getItem('playerId'); const current = el.playerSelect?.value || saved || '1'; if (current !== saved) localStorage.setItem('playerId', current); return current; }
 async function sendGuessToServer(ch) {
-  try { const resp = await fetch('/guess', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ char: ch, playerId: getPlayerId() }) }); const data = await resp.json(); el.charStatus.className = 'status'; let msg = data.message || ''; if (data.code === 'repeat' && !/已经猜过了（(命中|未命中)）/.test(msg)) msg = `已经猜过了（${data.hit ? '命中' : '未命中'}）`; el.charStatus.textContent = msg; if (data.code === 'miss') el.charStatus.classList.add('err'); if (data.code === 'hit' || (data.code === 'repeat' && data.hit)) el.charStatus.classList.add('ok'); } catch { el.connectionStatus.textContent = '发送失败，请检查网络/服务端'; }
+  try {
+    const resp = await fetch('/guess', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ char: ch, playerId: getPlayerId() }) });
+    const data = await resp.json();
+    el.charStatus.className = 'status';
+    let msg = data.message || '';
+    if (data.code === 'repeat' && !/已经猜过了（(命中|未命中)）/.test(msg)) msg = `已经猜过了（${data.hit ? '命中' : '未命中'}）`;
+    el.charStatus.textContent = msg;
+    if (data.code === 'miss') el.charStatus.classList.add('err');
+    if (data.code === 'hit' || (data.code === 'repeat' && data.hit)) {
+      el.charStatus.classList.add('ok');
+      // 立即在本地高亮（SSE 也会同步 lastHitKey）
+      const k = canonicalChar(ch);
+      if (data.hit || data.code === 'hit' || data.message?.includes('命中')) lastHitKey = k;
+      render();
+    }
+  } catch { el.connectionStatus.textContent = '发送失败，请检查网络/服务端'; }
 }
-function applyServerState(s) { revealedMask = s.revealedMask.map(Boolean); gameWon = !!s.gameWon; preWinRevealed = s.preWinRevealed || null; playerGuesses = s.players || { '1': [], '2': [] }; render(); }
+function applyServerState(s) { revealedMask = s.revealedMask.map(Boolean); gameWon = !!s.gameWon; preWinRevealed = s.preWinRevealed || null; playerGuesses = s.players || { '1': [], '2': [] }; if ('lastHitKey' in s) lastHitKey = s.lastHitKey || null; render(); }
 function shouldRefreshArticle(s) { return typeof s.articleSeq === 'number' && s.articleSeq !== serverArticleSeq; }
 function connectSSE() { try { es = new EventSource('/events'); es.onopen = () => { serverConnected = true; el.connectionStatus.textContent = '多人协作：已连接'; }; es.onmessage = async (ev) => { try { const s = JSON.parse(ev.data); if (shouldRefreshArticle(s)) { serverArticleSeq = s.articleSeq; setStatusLoading(true); try { const r = await fetch('/article'); const a = await r.json(); if (a && a.title) { ARTICLE = a; rebuildFromArticle(); } } catch {} finally { setStatusLoading(false); } } applyServerState(s); } catch {} }; es.onerror = () => { serverConnected = false; el.connectionStatus.textContent = '多人协作：未连接（单机模式）'; }; } catch { serverConnected = false; el.connectionStatus.textContent = '多人协作：未连接（单机模式）'; } }
 function disconnectSSE() { if (es && typeof es.close === 'function') { try { es.close(); } catch {} } es = null; serverConnected = false; }
@@ -191,6 +210,8 @@ function setMode(mode) { currentMode = mode === 'multi' ? 'multi' : 'single'; lo
       preWinRevealed = revealedMask.slice();
       for (let i = 0; i < revealedMask.length; i++) revealedMask[i] = true;
       gameWon = true;
+      // 显示全文时不再高亮最近命中字
+      lastHitKey = null;
       el.charStatus.className = 'status ok';
       el.charStatus.textContent = '已显示全文答案';
       render();

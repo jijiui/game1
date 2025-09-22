@@ -97,6 +97,7 @@ pre.masked {
 }
 
 .char.pre-hit { font-weight: 700; }
+.char.last-hit { background: #fff3c4; border-radius: 3px; font-weight: 700; }
 
 .pill-list { display: flex; flex-wrap: wrap; gap: 0.35rem; justify-content: center; }
 .pill { background: #eef2ff; border: 1px solid #e5e7eb; color: #344054; padding: 0.15rem 0.45rem; border-radius: 999px; font-size: 0.95rem; }

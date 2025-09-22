@@ -34,6 +34,7 @@ let guessedSet = new Set(); // 全局已猜集合（归一化）
 let missedSet = new Set();
 let gameWon = false;
 let preWinRevealed = null; // 胜利瞬间已揭示位置
+let lastHitKey = null; // 最近一次命中的字符（归一化）
 const byPlayer = { '1': [], '2': [] }; // 每项: { char, hit }
 let articleSeq = 1;
 function rebuildFromArticle() {
@@ -56,6 +57,7 @@ function rebuildFromArticle() {
   byPlayer['1'] = [];
   byPlayer['2'] = [];
   articleSeq += 1;
+  lastHitKey = null;
 }
 
 // 初始化标点/空白可见
@@ -68,6 +70,7 @@ function stateSnapshot() {
     players: byPlayer,
     gameWon,
     preWinRevealed,
+    lastHitKey,
     articleSeq,
   };
 }
@@ -101,6 +104,7 @@ function handleGuess(char, playerId) {
     resp.message = exists ? '已经猜过了（命中）' : '已经猜过了（未命中）';
     resp.hit = exists;
     resp.repeat = true;
+    if (exists) lastHitKey = key;
     return resp;
   }
   guessedSet.add(key);
@@ -125,6 +129,7 @@ function handleGuess(char, playerId) {
     resp.code = newly ? 'hit' : 'repeat';
     resp.message = newly ? `命中：${ch}` : '已经猜过了（命中）';
     resp.hit = newly;
+    lastHitKey = key;
   }
 
   // 胜利检测
