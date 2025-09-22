@@ -249,15 +249,33 @@ server.listen(PORT, async () => {
 });
 
 // ———————————— 调用质谱大模型（GLM‑4.5‑Flash） ————————————
+// 工具：分段校验（要求以空行分段，2~4段）
+function splitParagraphs(body) {
+  const text = String(body || '').replace(/\r\n/g, '\n');
+  return text.split(/\n\s*\n+/).map((s) => s.trim()).filter(Boolean);
+}
+function isParagraphsValid(body) {
+  const n = splitParagraphs(body).length;
+  return n >= 2 && n <= 4;
+}
+
 async function generateArticleWithZhipu(apiKey) {
   if (!apiKey) return null;
   const payload = {
     model: 'glm-4.5-flash',
     messages: [
-      { role: 'system', content: '你是一个文字助手，先给出一个不生僻的常用名词，可以是人物地点作品物品品牌等等的任意东西的名字，也可以是一个概念，然后给出关于这个词的介绍。输出 JSON：{"title":"...","body":"..."}，不要额外说明，不要代码块。正文通俗、原创、无敏感内容。出过的词不要再出' },
-      { role: 'user', content: '请生成一个不生僻的常用名词（注意，出过的词不要再出），人物地点作品物品品牌等等的任意东西的名字，也可以是一个概念，以及300~400字的关于这个词的介绍,介绍要至少分2段，最多分4段，要求上面的 JSON 格式。' },
+      {
+        role: 'system',
+        content:
+          '你是一个专业且不容忍重复的文字助手。仅返回 JSON：{"title":"...","body":"..."}，不要额外说明或代码块。正文通俗、原创、无敏感内容。要求 body 使用空行（\\n\\n）分段，段落数为 2~4 段，不要列表/编号/标题/Markdown。',
+      },
+      {
+        role: 'user',
+        content:
+          '请生成一个不生僻的常用名词（人物/地点/作品/物品/品牌/概念等均可），并给出300~400字介绍。正文用空行（\\n\\n）分为 2~4 段。仅返回 JSON：{"title":"...","body":"..."}。',
+      },
     ],
-    temperature: 0.7,
+    top_p: 0.9,
   };
 
   const resp = await httpsJson('https://open.bigmodel.cn/api/paas/v4/chat/completions', payload, apiKey);
@@ -269,7 +287,10 @@ async function generateArticleWithZhipu(apiKey) {
     const raw = jsonStart >= 0 ? text.slice(jsonStart, jsonEnd + 1) : text;
     const obj = JSON.parse(raw);
     if (obj && typeof obj.title === 'string' && typeof obj.body === 'string') {
-      return { title: obj.title.trim(), body: obj.body.trim() };
+      const title = String(obj.title).trim();
+      const body = String(obj.body).trim();
+      if (!isParagraphsValid(body)) return null;
+      return { title, body };
     }
   } catch {}
   return null;
@@ -315,7 +336,7 @@ async function checkAndFixArticleWithZhipu(apiKey, article) {
       {
         role: 'system',
         content:
-          '你是中文文本校对助手。接收 JSON：{"title":"...","body":"..."}，仅返回修正后的 JSON（同样字段），不要多余文字或代码块。修正错别字、标点、语法，意图不变。',
+          '你是中文文本校对助手。接收 JSON：{"title":"...","body":"..."}，仅返回修正后的 JSON（同样字段），不要多余文字或代码块。修正错别字、标点、语法，意图不变。若正文未分段，请将 body 用空行（\\n\\n）分为 2~4 段。',
       },
       {
         role: 'user',
@@ -352,15 +373,15 @@ async function generateArticleWithZhipuTest(apiKey) {
         {
           role: 'system',
           content:
-            '你是一个文字助手，先给出一个不生僻名词，可以是人物地点作品物品品牌等等的任意东西的名字，也可以是一个概念，然后给出关于这个词的介绍。注意，出过的词不要再出。输出 JSON：{"title":"...","body":"..."}，不要额外说明，不要代码块。正文通俗、原创、无敏感内容。出过的词不要再出。',
+            '你是一个文字助手。请仅返回 JSON：{"candidates":[{"title":"...","body":"..."}, ...]}，不要额外说明或代码块。正文通俗、原创、无敏感内容。要求 body 使用空行（\\n\\n）分段，段落数为 2~4 段。不要列表/编号/标题/Markdown。',
         },
         {
           role: 'user',
           content:
-            '给出一个不生僻名词，出过的词不要再出，人物地点作品物品品牌等等的任意东西的名字，也可以是一个概念，涉及历史文艺生物日常生活，以及300~400字的关于这个词的介绍,介绍要至少分2段，最多分4段，要求上面的 JSON 格式。',
+            '请给出2个不同的常用名词候选（人物/地点/作品/物品/品牌/概念等），每个候选提供300~400字介绍，正文用空行（\\n\\n）分为 2~4 段。仅返回 JSON，字段为 candidates。',
         },
       ],
-      temperature: 0.7,
+      top_p: 0.9,
     };
     const resp = await httpsJson('https://open.bigmodel.cn/api/paas/v4/chat/completions', payload, apiKey);
     if (!resp) continue;
@@ -370,11 +391,18 @@ async function generateArticleWithZhipuTest(apiKey) {
       const end = text.lastIndexOf('}');
       const raw = start >= 0 ? text.slice(start, end + 1) : text;
       const obj = JSON.parse(raw);
-      if (obj && typeof obj.title === 'string' && typeof obj.body === 'string') {
+      if (obj && Array.isArray(obj.candidates)) {
+        const list = obj.candidates
+          .map((c) => ({ title: String(c?.title || '').trim(), body: String(c?.body || '').trim() }))
+          .filter((c) => c.title && c.body && isParagraphsValid(c.body) && !banned.has(c.title));
+        if (list.length) {
+          const pick = list[Math.floor(Math.random() * list.length)];
+          return pick;
+        }
+      } else if (obj && typeof obj.title === 'string' && typeof obj.body === 'string') {
         const title = String(obj.title).trim();
         const body = String(obj.body).trim();
-        if (banned.has(title)) continue;
-        return { title, body };
+        if (!banned.has(title) && isParagraphsValid(body)) return { title, body };
       }
     } catch {}
   }

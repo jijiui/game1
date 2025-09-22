@@ -129,3 +129,5 @@ summary { cursor: pointer; }
   justify-content: center;
   flex-wrap: wrap;
 }
+
+/* 取消全文遮罩，加载提示仅在“已猜测X次”处显示 */

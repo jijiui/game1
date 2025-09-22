@@ -37,6 +37,19 @@ let currentMode = 'single';
 let attemptsCount = 0;
 let serverArticleSeq = 0;
 
+function setStatusLoading(flag) {
+  if (!el.charStatus) return;
+  if (flag) {
+    el.charStatus.className = 'status';
+    el.charStatus.textContent = '加载中…';
+  } else {
+    if (el.charStatus.textContent === '加载中…') {
+      el.charStatus.className = 'status';
+      el.charStatus.textContent = '';
+    }
+  }
+}
+
 function canonicalChar(ch) { return /[A-Za-z]/.test(ch) ? ch.toLowerCase() : ch; }
 
 function rebuildFromArticle() {
@@ -136,12 +149,13 @@ async function sendGuessToServer(ch) {
 }
 function applyServerState(s) { revealedMask = s.revealedMask.map(Boolean); gameWon = !!s.gameWon; preWinRevealed = s.preWinRevealed || null; playerGuesses = s.players || { '1': [], '2': [] }; render(); }
 function shouldRefreshArticle(s) { return typeof s.articleSeq === 'number' && s.articleSeq !== serverArticleSeq; }
-function connectSSE() { try { es = new EventSource('/events'); es.onopen = () => { serverConnected = true; el.connectionStatus.textContent = '多人协作：已连接'; }; es.onmessage = async (ev) => { try { const s = JSON.parse(ev.data); if (shouldRefreshArticle(s)) { serverArticleSeq = s.articleSeq; try { const r = await fetch('/article'); const a = await r.json(); if (a && a.title) { ARTICLE = a; rebuildFromArticle(); } } catch {} } applyServerState(s); } catch {} }; es.onerror = () => { serverConnected = false; el.connectionStatus.textContent = '多人协作：未连接（单机模式）'; }; } catch { serverConnected = false; el.connectionStatus.textContent = '多人协作：未连接（单机模式）'; } }
+function connectSSE() { try { es = new EventSource('/events'); es.onopen = () => { serverConnected = true; el.connectionStatus.textContent = '多人协作：已连接'; }; es.onmessage = async (ev) => { try { const s = JSON.parse(ev.data); if (shouldRefreshArticle(s)) { serverArticleSeq = s.articleSeq; setStatusLoading(true); try { const r = await fetch('/article'); const a = await r.json(); if (a && a.title) { ARTICLE = a; rebuildFromArticle(); } } catch {} finally { setStatusLoading(false); } } applyServerState(s); } catch {} }; es.onerror = () => { serverConnected = false; el.connectionStatus.textContent = '多人协作：未连接（单机模式）'; }; } catch { serverConnected = false; el.connectionStatus.textContent = '多人协作：未连接（单机模式）'; } }
 function disconnectSSE() { if (es && typeof es.close === 'function') { try { es.close(); } catch {} } es = null; serverConnected = false; }
 function setMode(mode) { currentMode = mode === 'multi' ? 'multi' : 'single'; localStorage.setItem('gameMode', currentMode); if (currentMode === 'single') { disconnectSSE(); if (el.playerSelect) el.playerSelect.style.display = 'none'; if (el.playersGuessesBlock) el.playersGuessesBlock.style.display = 'none'; if (el.connectionStatus) el.connectionStatus.style.display = 'none'; resetGame(); } else { if (el.playerSelect) el.playerSelect.style.display = ''; if (el.playersGuessesBlock) el.playersGuessesBlock.style.display = ''; if (el.connectionStatus) el.connectionStatus.style.display = ''; connectSSE(); fetch('/reset', { method: 'POST' }).catch(() => {}); attemptsCount = 0; renderAttempts(); } }
 
 // 启动逻辑：加载文章 -> 初始化模式/玩家 -> 绑定事件
 (async function start() {
+  setStatusLoading(true);
   try { const r = await fetch('/article'); const a = await r.json(); if (a && a.title) { ARTICLE = a; } } catch {}
   rebuildFromArticle();
   if (el.modeSelect) { const savedMode = localStorage.getItem('gameMode') || 'single'; el.modeSelect.value = savedMode; setMode(savedMode); el.modeSelect.addEventListener('change', () => setMode(el.modeSelect.value)); } else { setMode('single'); }
@@ -151,6 +165,7 @@ function setMode(mode) { currentMode = mode === 'multi' ? 'multi' : 'single'; lo
   el.resetBtn.addEventListener('click', async () => { if (serverConnected && currentMode === 'multi') { try { await fetch('/reset', { method: 'POST' }); } catch {} attemptsCount = 0; renderAttempts(); } else { resetGame(); } });
   if (el.regenBtn) {
     el.regenBtn.addEventListener('click', async () => {
+      setStatusLoading(true);
       try {
         const resp = await fetch('/regenerate', { method: 'POST' });
         const data = await resp.json();
@@ -168,7 +183,7 @@ function setMode(mode) { currentMode = mode === 'multi' ? 'multi' : 'single'; lo
       } catch {
         el.charStatus.className = 'status err';
         el.charStatus.textContent = '换一篇失败：网络或服务端错误';
-      }
+      } finally { setStatusLoading(false); }
     });
   }
   if (el.revealAllBtn) {
@@ -181,5 +196,5 @@ function setMode(mode) { currentMode = mode === 'multi' ? 'multi' : 'single'; lo
       render();
     });
   }
-  renderAttempts(); render();
+  renderAttempts(); render(); setStatusLoading(false);
 })();
